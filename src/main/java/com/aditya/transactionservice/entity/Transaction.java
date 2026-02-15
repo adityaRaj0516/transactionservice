@@ -15,14 +15,19 @@ public class Transaction {
     private String description;
     private LocalDateTime createdAt;
 
+    @Enumerated(EnumType.STRING)
+    private TransactionStatus status;
+
+
     public Transaction() {
 
     }
 
-    public  Transaction(Double amount, String type, String description){
+    public Transaction(Double amount, String type, String description) {
         this.amount = amount;
         this.type = type;
         this.description = description;
+        this.status = TransactionStatus.INITIATED;
         this.createdAt = LocalDateTime.now();
     }
 
@@ -42,7 +47,23 @@ public class Transaction {
         return description;
     }
 
+    public TransactionStatus getStatus() {
+        return status;
+    }
+
     public LocalDateTime getCreatedAt() {
         return createdAt;
     }
+
+    public void updateStatus(TransactionStatus newStatus) {
+
+        if (this.status == TransactionStatus.SUCCESS ||
+                this.status == TransactionStatus.FAILED) {
+
+            throw new IllegalStateException("Cannot change status from terminal state");
+        }
+
+        this.status = newStatus;
+    }
+
 }
