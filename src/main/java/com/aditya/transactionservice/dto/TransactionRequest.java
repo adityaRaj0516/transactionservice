@@ -1,9 +1,18 @@
 package com.aditya.transactionservice.dto;
 
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.NotBlank;
+
+
 public class TransactionRequest {
 
+    @NotNull
+    @Positive
     private Double amount;
     private String type;
+
+    @NotBlank
     private String description;
 
     public Double getAmount() {
