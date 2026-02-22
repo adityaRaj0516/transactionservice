@@ -11,19 +11,24 @@ public class Transaction {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
     private Double amount;
-    private String type;
     private String description;
     private LocalDateTime createdAt;
 
     @Enumerated(EnumType.STRING)
     private TransactionStatus status;
 
+    @ManyToOne
+    @JoinColumn(name = "account_id")
+    private Account account;
+
+    @Enumerated(EnumType.STRING)
+    private TransactionType type;
 
     public Transaction() {
 
     }
 
-    public Transaction(Double amount, String type, String description) {
+    public Transaction(Double amount, TransactionType type, String description) {
         this.amount = amount;
         this.type = type;
         this.description = description;
@@ -43,7 +48,7 @@ public class Transaction {
         this.amount = amount;
     }
 
-    public void setType(String type) {
+    public void setType(TransactionType type) {
         this.type = type;
     }
 
@@ -59,11 +64,19 @@ public class Transaction {
         this.status = status;
     }
 
+    public Account getAccount() {
+        return account;
+    }
+
+    public void setAccount(Account account) {
+        this.account = account;
+    }
+
     public Double getAmount() {
         return amount;
     }
 
-    public String getType() {
+    public TransactionType getType() {
         return type;
     }
 

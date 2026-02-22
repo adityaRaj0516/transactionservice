@@ -29,30 +29,11 @@ import java.util.Map;
 @RestController
 public class HealthController {
 
-    private final TransactionRepository transactionRepository;
-
-    public HealthController(TransactionRepository transactionRepository) {
-        this.transactionRepository = transactionRepository;
-    }
-
     @GetMapping("/health")
     public HealthResponse health() {
         return new HealthResponse(
                 "UP",
                 "Transaction Service"
         );
-    }
-
-    @PostMapping("/test-transaction")
-    public String createTestTransaction() {
-        Transaction tx = new Transaction(
-                1000.0,
-                "CREDIT",
-                "Test transaction"
-        );
-
-        transactionRepository.save(tx);
-
-        return "Transaction saved!";
     }
 }

@@ -2,6 +2,7 @@ package com.aditya.transactionservice.entity;
 
 import jakarta.persistence.*;
 import java.math.BigDecimal;
+import java.util.List;
 
 @Entity
 public class Account {
@@ -13,6 +14,10 @@ public class Account {
     private String name;
 
     private BigDecimal balance;
+
+    @OneToMany(mappedBy = "account", cascade = CascadeType.ALL)
+    private List<Transaction> transactions;
+
 
     public Account() {}
 

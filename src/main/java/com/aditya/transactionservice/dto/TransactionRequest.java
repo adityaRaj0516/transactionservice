@@ -1,5 +1,6 @@
 package com.aditya.transactionservice.dto;
 
+import com.aditya.transactionservice.entity.TransactionType;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.NotBlank;
@@ -10,10 +11,21 @@ public class TransactionRequest {
     @NotNull
     @Positive
     private Double amount;
-    private String type;
+    private TransactionType type;
 
     @NotBlank
     private String description;
+
+    @NotNull
+    private Long accountId;
+
+    public Long getAccountId() {
+        return accountId;
+    }
+
+    public void setAccountId(Long accountId) {
+        this.accountId = accountId;
+    }
 
     public Double getAmount() {
         return amount;
@@ -23,11 +35,11 @@ public class TransactionRequest {
         this.amount = amount;
     }
 
-    public String getType() {
+    public TransactionType getType() {
         return type;
     }
 
-    public void setType(String type) {
+    public void setType(TransactionType type) {
         this.type = type;
     }
 
