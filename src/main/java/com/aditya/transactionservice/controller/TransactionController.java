@@ -3,6 +3,7 @@ package com.aditya.transactionservice.controller;
 import com.aditya.transactionservice.dto.TransactionRequest;
 import com.aditya.transactionservice.entity.Transaction;
 import com.aditya.transactionservice.service.TransactionService;
+import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
@@ -30,8 +31,12 @@ public class TransactionController {
 
 
     @PostMapping
-    public Transaction create(@RequestBody TransactionRequest request) {
-        return transactionService.createTransaction(request);
+    public ResponseEntity<Transaction> create(
+            @Valid @RequestBody TransactionRequest request) {
+
+        return ResponseEntity.ok(
+                transactionService.createTransaction(request)
+        );
     }
 
     @GetMapping("/{id}")
@@ -42,9 +47,11 @@ public class TransactionController {
     @PutMapping("/{id}")
     public ResponseEntity<Transaction> update(
             @PathVariable Long id,
-            @RequestBody TransactionRequest request
+            @Valid @RequestBody TransactionRequest request
     ) {
-        return ResponseEntity.ok(transactionService.update(id, request));
+        return ResponseEntity.ok(
+                transactionService.update(id, request)
+        );
     }
 
     @DeleteMapping("/{id}")

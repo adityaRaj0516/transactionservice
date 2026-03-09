@@ -8,15 +8,17 @@ import jakarta.validation.constraints.NotBlank;
 
 public class TransactionRequest {
 
-    @NotNull
-    @Positive
+    @NotNull(message = "Amount is required")
+    @Positive(message = "Amount must be greater than zero")
     private Double amount;
+
+    @NotNull(message = "Transaction type is required")
     private TransactionType type;
 
-    @NotBlank
+    @NotBlank(message = "Description cannot be empty")
     private String description;
 
-    @NotNull
+    @NotNull(message = "Account ID is required")
     private Long accountId;
 
     public Long getAccountId() {
