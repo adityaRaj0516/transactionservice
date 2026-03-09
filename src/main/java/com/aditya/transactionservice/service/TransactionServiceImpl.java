@@ -151,14 +151,11 @@ public class TransactionServiceImpl implements TransactionService {
 
     @Override
     @Transactional
-    public Account createAccount(BigDecimal initialBalance) {
+    public Account createAccount(Account account) {
 
-        if (initialBalance.compareTo(BigDecimal.ZERO) < 0) {
+        if (account.getBalance().compareTo(BigDecimal.ZERO) < 0) {
             throw new InvalidTransactionException("Initial balance cannot be negative");
         }
-
-        Account account = new Account();
-        account.setBalance(initialBalance);
 
         return accountRepository.save(account);
     }

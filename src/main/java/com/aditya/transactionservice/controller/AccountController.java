@@ -27,9 +27,9 @@ public class AccountController {
     }
 
     @PostMapping
-    public ResponseEntity<Account> createAccount(@RequestBody BigDecimal initialBalance) {
+    public ResponseEntity<Account> createAccount(@RequestBody Account account) {
         return ResponseEntity.ok(
-                transactionService.createAccount(initialBalance)
+                transactionService.createAccount(account)
         );
     }
 

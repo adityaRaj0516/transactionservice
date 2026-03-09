@@ -18,6 +18,6 @@ public interface TransactionService {
     Transaction update(Long id, TransactionRequest request);
     void delete(Long id);
     BigDecimal getAccountBalance(Long accountId);
-    Account createAccount(BigDecimal initialBalance);
+    Account createAccount(Account account);
 }
 
