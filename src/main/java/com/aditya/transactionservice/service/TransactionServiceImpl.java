@@ -8,22 +8,28 @@ import com.aditya.transactionservice.entity.TransactionType;
 import com.aditya.transactionservice.exception.InvalidTransactionException;
 import com.aditya.transactionservice.repository.AccountRepository;
 import com.aditya.transactionservice.repository.TransactionRepository;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.math.BigDecimal;
-import java.util.List;
 
 @Service
 public class TransactionServiceImpl implements TransactionService {
 
+    private static final Logger log =
+            LoggerFactory.getLogger(TransactionServiceImpl.class);
+
     private final TransactionRepository transactionRepository;
     private final AccountRepository accountRepository;
-
 
     public TransactionServiceImpl(TransactionRepository transactionRepository,
                                   AccountRepository accountRepository) {
@@ -31,35 +37,47 @@ public class TransactionServiceImpl implements TransactionService {
         this.accountRepository = accountRepository;
     }
 
-
     @Override
     @Transactional
     public Transaction createTransaction(TransactionRequest request) {
 
+        log.info("Creating transaction for account {} amount {} type {}",
+                request.getAccountId(),
+                request.getAmount(),
+                request.getType());
+
         if (request.getAmount() <= 0) {
+            log.warn("Invalid transaction amount {}", request.getAmount());
             throw new InvalidTransactionException("Amount must be positive");
         }
 
         Account account = accountRepository.findById(request.getAccountId())
-                .orElseThrow(() ->
-                        new InvalidTransactionException(
-                                "Account not found with id: " + request.getAccountId()
-                        )
-                );
+                .orElseThrow(() -> {
+                    log.warn("Account not found with id {}", request.getAccountId());
+                    return new InvalidTransactionException(
+                            "Account not found with id: " + request.getAccountId());
+                });
 
         BigDecimal amount = BigDecimal.valueOf(request.getAmount());
 
         if (request.getType() == TransactionType.CREDIT) {
 
             account.setBalance(account.getBalance().add(amount));
+            log.info("Credited {} to account {}", amount, account.getId());
 
         } else if (request.getType() == TransactionType.DEBIT) {
 
             if (account.getBalance().compareTo(amount) < 0) {
+                log.warn("Insufficient balance for account {} current balance {} requested {}",
+                        account.getId(),
+                        account.getBalance(),
+                        amount);
+
                 throw new InvalidTransactionException("Insufficient balance");
             }
 
             account.setBalance(account.getBalance().subtract(amount));
+            log.info("Debited {} from account {}", amount, account.getId());
         }
 
         Transaction transaction = new Transaction(
@@ -71,38 +89,53 @@ public class TransactionServiceImpl implements TransactionService {
         transaction.setAccount(account);
         transaction.updateStatus(TransactionStatus.SUCCESS);
 
-        return transactionRepository.save(transaction);
+        Transaction saved = transactionRepository.save(transaction);
+
+        log.info("Transaction completed successfully with id {}", saved.getId());
+
+        return saved;
     }
 
     @Override
     public Transaction getById(Long id) {
-        return transactionRepository.findById(id)
-                .orElseThrow(() ->
-                        new InvalidTransactionException(
-                                "Transaction not found with id: " + id
-                        )
-                );
-    }
 
+        log.info("Fetching transaction with id {}", id);
+
+        return transactionRepository.findById(id)
+                .orElseThrow(() -> {
+                    log.warn("Transaction not found with id {}", id);
+                    return new InvalidTransactionException(
+                            "Transaction not found with id: " + id);
+                });
+    }
 
     @Override
     public Page<Transaction> getAllTransactions(Pageable pageable) {
+
+        log.info("Fetching transactions page {} size {}",
+                pageable.getPageNumber(),
+                pageable.getPageSize());
+
         return transactionRepository.findAll(pageable);
     }
-
 
     @Override
     @Transactional
     public Transaction update(Long id, TransactionRequest request) {
 
+        log.info("Updating transaction {} with amount {} type {}",
+                id,
+                request.getAmount(),
+                request.getType());
+
         Transaction transaction = transactionRepository.findById(id)
-                .orElseThrow(() ->
-                        new InvalidTransactionException(
-                                "Transaction not found with id: " + id
-                        )
-                );
+                .orElseThrow(() -> {
+                    log.warn("Transaction not found for update id {}", id);
+                    return new InvalidTransactionException("Transaction not found with id: " + id);
+                });
 
         if (request.getAmount() <= 0) {
+            log.warn("Invalid update amount {}", request.getAmount());
             throw new InvalidTransactionException("Amount must be positive");
         }
 
@@ -110,41 +143,54 @@ public class TransactionServiceImpl implements TransactionService {
         transaction.setType(request.getType());
         transaction.setDescription(request.getDescription());
 
-        return transactionRepository.save(transaction);
+        Transaction updated = transactionRepository.save(transaction);
+
+        log.info("Transaction {} updated successfully", id);
+
+        return updated;
     }
 
     @Override
     @Transactional
     public void delete(Long id) {
 
+        log.warn("Deleting transaction with id {}", id);
+
         Transaction transaction = transactionRepository.findById(id)
-                .orElseThrow(() ->
-                        new InvalidTransactionException(
-                                "Transaction not found with id: " + id
-                        )
-                );
+                .orElseThrow(() -> {
+                    log.warn("Transaction not found for deletion id {}", id);
+                    return new InvalidTransactionException(
+                            "Transaction not found with id: " + id);
+                });
 
         transactionRepository.delete(transaction);
+
+        log.info("Transaction {} deleted successfully", id);
     }
 
     @Override
     public Page<Transaction> getTransactionsByAccount(Long accountId, int page, int size) {
 
+        log.info("Fetching transactions for account {} page {} size {}", accountId, page, size);
+
         Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
 
         return transactionRepository.findByAccountId(accountId, pageable);
-
     }
 
     @Override
     public BigDecimal getAccountBalance(Long accountId) {
 
+        log.info("Fetching balance for account {}", accountId);
+
         Account account = accountRepository.findById(accountId)
-                .orElseThrow(() ->
-                        new InvalidTransactionException(
-                                "Account not found with id: " + accountId
-                        )
-                );
+                .orElseThrow(() -> {
+                    log.warn("Account not found for balance check {}", accountId);
+                    return new InvalidTransactionException(
+                            "Account not found with id: " + accountId);
+                });
+
+        log.info("Current balance for account {} is {}", accountId, account.getBalance());
 
         return account.getBalance();
     }
@@ -153,12 +199,17 @@ public class TransactionServiceImpl implements TransactionService {
     @Transactional
     public Account createAccount(Account account) {
 
+        log.info("Creating account with initial balance {}", account.getBalance());
+
         if (account.getBalance().compareTo(BigDecimal.ZERO) < 0) {
+            log.warn("Attempted to create account with negative balance {}", account.getBalance());
             throw new InvalidTransactionException("Initial balance cannot be negative");
         }
 
-        return accountRepository.save(account);
+        Account saved = accountRepository.save(account);
+
+        log.info("Account created successfully with id {}", saved.getId());
+
+        return saved;
     }
-
 }
-
