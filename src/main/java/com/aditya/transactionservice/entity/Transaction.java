@@ -2,15 +2,16 @@ package com.aditya.transactionservice.entity;
 
 import jakarta.persistence.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "transaction")
+@Table(name = "transactions")
 public class Transaction {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    private Double amount;
+    private BigDecimal amount;
     private String description;
     private LocalDateTime createdAt;
 
@@ -28,7 +29,7 @@ public class Transaction {
 
     }
 
-    public Transaction(Double amount, TransactionType type, String description) {
+    public Transaction(BigDecimal amount, TransactionType type, String description) {
         this.amount = amount;
         this.type = type;
         this.description = description;
@@ -44,7 +45,7 @@ public class Transaction {
         this.id = id;
     }
 
-    public void setAmount(Double amount) {
+    public void setAmount(BigDecimal amount) {
         this.amount = amount;
     }
 
@@ -72,7 +73,7 @@ public class Transaction {
         this.account = account;
     }
 
-    public Double getAmount() {
+    public BigDecimal getAmount() {
         return amount;
     }
 

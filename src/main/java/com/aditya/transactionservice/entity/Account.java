@@ -18,6 +18,8 @@ public class Account {
     @OneToMany(mappedBy = "account", cascade = CascadeType.ALL)
     private List<Transaction> transactions;
 
+    @Version
+    private Long version;
 
     public Account() {}
 

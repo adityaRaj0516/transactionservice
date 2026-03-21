@@ -14,6 +14,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -46,7 +47,9 @@ public class TransactionServiceImpl implements TransactionService {
                 request.getAmount(),
                 request.getType());
 
-        if (request.getAmount() <= 0) {
+        BigDecimal amount = request.getAmount();
+
+        if(amount.compareTo(BigDecimal.ZERO) <= 0) {
             log.warn("Invalid transaction amount {}", request.getAmount());
             throw new InvalidTransactionException("Amount must be positive");
         }
@@ -57,8 +60,6 @@ public class TransactionServiceImpl implements TransactionService {
                     return new InvalidTransactionException(
                             "Account not found with id: " + request.getAccountId());
                 });
-
-        BigDecimal amount = BigDecimal.valueOf(request.getAmount());
 
         if (request.getType() == TransactionType.CREDIT) {
 
@@ -80,8 +81,10 @@ public class TransactionServiceImpl implements TransactionService {
             log.info("Debited {} from account {}", amount, account.getId());
         }
 
+        accountRepository.save(account);
+
         Transaction transaction = new Transaction(
-                request.getAmount(),
+                amount,
                 request.getType(),
                 request.getDescription()
         );
@@ -94,6 +97,66 @@ public class TransactionServiceImpl implements TransactionService {
         log.info("Transaction completed successfully with id {}", saved.getId());
 
         return saved;
+    }
+
+    @Transactional
+    public void transfer(Long sourceId, Long targetId, BigDecimal amount) {
+
+        try {
+            log.info("Initiating transfer from {} to {} amount {}", sourceId, targetId, amount);
+
+            if (sourceId.equals(targetId)) {
+                throw new InvalidTransactionException("Cannot transfer to same account");
+            }
+
+            if(amount.compareTo(BigDecimal.ZERO) <= 0){
+                throw new InvalidTransactionException("Amount must be positive");
+            }
+
+            Account source = accountRepository.findById(sourceId)
+                    .orElseThrow(() -> new InvalidTransactionException("Source account not found"));
+
+            Account target = accountRepository.findById(targetId)
+                    .orElseThrow(() -> new InvalidTransactionException("Target account not found"));
+
+            if (source.getBalance().compareTo(amount) < 0) {
+                throw new InvalidTransactionException("Insufficient balance");
+            }
+
+            source.setBalance(source.getBalance().subtract(amount));
+
+            target.setBalance(target.getBalance().add(amount));
+
+            accountRepository.save(source);
+            accountRepository.save(target);
+
+            accountRepository.flush();
+
+            Transaction debitTxn = new Transaction(
+                    amount,
+                    TransactionType.DEBIT,
+                    "Transfer to account " + targetId
+            );
+            debitTxn.setAccount(source);
+            debitTxn.updateStatus(TransactionStatus.SUCCESS);
+
+            Transaction creditTxn = new Transaction(
+                    amount,
+                    TransactionType.CREDIT,
+                    "Transfer from account " + sourceId
+            );
+            creditTxn.setAccount(target);
+            creditTxn.updateStatus(TransactionStatus.SUCCESS);
+
+            transactionRepository.save(debitTxn);
+            transactionRepository.save(creditTxn);
+
+            log.info("Transfer completed successfully");
+
+        }catch (ObjectOptimisticLockingFailureException e) {
+            log.error("Concurrency conflict detected", e);
+            throw new RuntimeException("Concurrent update detected. Please retry.");
+        }
     }
 
     @Override
@@ -134,12 +197,14 @@ public class TransactionServiceImpl implements TransactionService {
                     return new InvalidTransactionException("Transaction not found with id: " + id);
                 });
 
-        if (request.getAmount() <= 0) {
+        BigDecimal amount = request.getAmount();
+
+        if (amount.compareTo(BigDecimal.ZERO) <= 0) {
             log.warn("Invalid update amount {}", request.getAmount());
             throw new InvalidTransactionException("Amount must be positive");
         }
 
-        transaction.setAmount(request.getAmount());
+        transaction.setAmount(amount);
         transaction.setType(request.getType());
         transaction.setDescription(request.getDescription());
 

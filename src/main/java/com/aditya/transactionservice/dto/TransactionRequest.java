@@ -5,12 +5,14 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.NotBlank;
 
+import java.math.BigDecimal;
+
 
 public class TransactionRequest {
 
     @NotNull(message = "Amount is required")
     @Positive(message = "Amount must be greater than zero")
-    private Double amount;
+    private BigDecimal amount;
 
     @NotNull(message = "Transaction type is required")
     private TransactionType type;
@@ -21,19 +23,15 @@ public class TransactionRequest {
     @NotNull(message = "Account ID is required")
     private Long accountId;
 
-    public Long getAccountId() {
-        return accountId;
-    }
+    private Long sourceId;
+    private Long targetId;
 
-    public void setAccountId(Long accountId) {
-        this.accountId = accountId;
-    }
 
-    public Double getAmount() {
+    public BigDecimal getAmount() {
         return amount;
     }
 
-    public void setAmount(Double amount) {
+    public void setAmount(BigDecimal amount) {
         this.amount = amount;
     }
 
@@ -51,5 +49,29 @@ public class TransactionRequest {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public Long getAccountId() {
+        return accountId;
+    }
+
+    public void setAccountId(Long accountId) {
+        this.accountId = accountId;
+    }
+
+    public Long getSourceId() {
+        return sourceId;
+    }
+
+    public void setSourceId(Long sourceId) {
+        this.sourceId = sourceId;
+    }
+
+    public Long getTargetId() {
+        return targetId;
+    }
+
+    public void setTargetId(Long targetId) {
+        this.targetId = targetId;
     }
 }

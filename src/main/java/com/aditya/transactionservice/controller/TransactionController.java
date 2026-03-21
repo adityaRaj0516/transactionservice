@@ -80,5 +80,22 @@ public class TransactionController {
         return ResponseEntity.ok("Transaction deleted successfully");
     }
 
+    @PostMapping("/transfer")
+    public ResponseEntity<String> transfer(@RequestBody TransactionRequest request) {
+
+        log.info("Transfer request: {} -> {} amount {}",
+                request.getSourceId(),
+                request.getTargetId(),
+                request.getAmount());
+
+        transactionService.transfer(
+                request.getSourceId(),
+                request.getTargetId(),
+                request.getAmount()
+        );
+
+        return ResponseEntity.ok("Transfer successful");
+    }
+
 }
 
