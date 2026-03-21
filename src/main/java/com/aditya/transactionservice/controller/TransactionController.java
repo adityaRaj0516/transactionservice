@@ -81,19 +81,18 @@ public class TransactionController {
     }
 
     @PostMapping("/transfer")
-    public ResponseEntity<String> transfer(@RequestBody TransactionRequest request) {
-
-        log.info("Transfer request: {} -> {} amount {}",
+    public ResponseEntity<String> transfer(@Valid @RequestBody TransactionRequest request) {
+        log.info("Transfer request: {} -> {} amount {} idempotencyKey {}",
                 request.getSourceId(),
                 request.getTargetId(),
-                request.getAmount());
-
+                request.getAmount(),
+                request.getIdempotencyKey());
         transactionService.transfer(
                 request.getSourceId(),
                 request.getTargetId(),
-                request.getAmount()
+                request.getAmount(),
+                request.getIdempotencyKey() // IMPORTANT
         );
-
         return ResponseEntity.ok("Transfer successful");
     }
 

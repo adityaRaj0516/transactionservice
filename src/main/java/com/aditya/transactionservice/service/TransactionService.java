@@ -19,6 +19,6 @@ public interface TransactionService {
     void delete(Long id);
     BigDecimal getAccountBalance(Long accountId);
     Account createAccount(Account account);
-    void transfer(Long sourceId, Long targetId, BigDecimal amount);
+    void transfer(Long sourceId, Long targetId, BigDecimal amount, String idempotencyKey);
 }
 

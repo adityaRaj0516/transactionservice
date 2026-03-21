@@ -9,11 +9,13 @@ import com.aditya.transactionservice.exception.InvalidTransactionException;
 import com.aditya.transactionservice.repository.AccountRepository;
 import com.aditya.transactionservice.repository.TransactionRepository;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,6 +27,9 @@ import java.math.BigDecimal;
 
 @Service
 public class TransactionServiceImpl implements TransactionService {
+
+//    @Autowired
+//    private RedisTemplate<String, Object> redisTemplate;
 
     private static final Logger log =
             LoggerFactory.getLogger(TransactionServiceImpl.class);
@@ -100,16 +105,33 @@ public class TransactionServiceImpl implements TransactionService {
     }
 
     @Transactional
-    public void transfer(Long sourceId, Long targetId, BigDecimal amount) {
+    public void transfer(Long sourceId, Long targetId, BigDecimal amount, String idempotencyKey) {
+
+        String cacheKey = "idem:" + idempotencyKey;
+        String lockKey = "lock:" + idempotencyKey;
+
+//        Object cached = redisTemplate.opsForValue().get(cacheKey);
+//        if (cached != null) {
+//            log.info("Returning cached result for {}", idempotencyKey);
+//            return;
+//        }
+
+//        Boolean lockAcquired = redisTemplate.opsForValue()
+//                .setIfAbsent(lockKey, "LOCKED", 10, java.util.concurrent.TimeUnit.SECONDS);
+
+//        if (Boolean.FALSE.equals(lockAcquired)) {
+//            throw new RuntimeException("Duplicate request in progress");
+//        }
 
         try {
+
             log.info("Initiating transfer from {} to {} amount {}", sourceId, targetId, amount);
 
             if (sourceId.equals(targetId)) {
                 throw new InvalidTransactionException("Cannot transfer to same account");
             }
 
-            if(amount.compareTo(BigDecimal.ZERO) <= 0){
+            if (amount.compareTo(BigDecimal.ZERO) <= 0) {
                 throw new InvalidTransactionException("Amount must be positive");
             }
 
@@ -124,7 +146,6 @@ public class TransactionServiceImpl implements TransactionService {
             }
 
             source.setBalance(source.getBalance().subtract(amount));
-
             target.setBalance(target.getBalance().add(amount));
 
             accountRepository.save(source);
@@ -139,6 +160,7 @@ public class TransactionServiceImpl implements TransactionService {
             );
             debitTxn.setAccount(source);
             debitTxn.updateStatus(TransactionStatus.SUCCESS);
+            debitTxn.setIdempotencyKey(idempotencyKey + "_DEBIT");
 
             Transaction creditTxn = new Transaction(
                     amount,
@@ -147,15 +169,26 @@ public class TransactionServiceImpl implements TransactionService {
             );
             creditTxn.setAccount(target);
             creditTxn.updateStatus(TransactionStatus.SUCCESS);
+            creditTxn.setIdempotencyKey(idempotencyKey + "_CREDIT");
 
             transactionRepository.save(debitTxn);
             transactionRepository.save(creditTxn);
 
             log.info("Transfer completed successfully");
 
-        }catch (ObjectOptimisticLockingFailureException e) {
+//            redisTemplate.opsForValue()
+//                    .set(cacheKey, "SUCCESS", 10, java.util.concurrent.TimeUnit.MINUTES);
+
+        } catch (ObjectOptimisticLockingFailureException e) {
             log.error("Concurrency conflict detected", e);
             throw new RuntimeException("Concurrent update detected. Please retry.");
+
+        } catch (org.springframework.dao.DataIntegrityViolationException e) {
+            log.warn("Duplicate transaction detected for key {}", idempotencyKey);
+            return;
+
+        } finally {
+//            redisTemplate.delete(lockKey);
         }
     }
 
