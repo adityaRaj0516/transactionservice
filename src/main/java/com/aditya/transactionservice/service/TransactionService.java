@@ -1,6 +1,7 @@
 package com.aditya.transactionservice.service;
 
 import com.aditya.transactionservice.dto.TransactionRequest;
+import com.aditya.transactionservice.dto.TransferResponse;
 import com.aditya.transactionservice.entity.Account;
 import com.aditya.transactionservice.entity.Transaction;
 import org.springframework.data.domain.Page;
@@ -19,6 +20,6 @@ public interface TransactionService {
     void delete(Long id);
     BigDecimal getAccountBalance(Long accountId);
     Account createAccount(Account account);
-    void transfer(Long sourceId, Long targetId, BigDecimal amount, String idempotencyKey);
+    TransferResponse transfer(Long sourceId, Long targetId, BigDecimal amount, String idempotencyKey);
 }
 

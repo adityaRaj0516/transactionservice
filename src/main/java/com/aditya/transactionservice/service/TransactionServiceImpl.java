@@ -1,6 +1,7 @@
 package com.aditya.transactionservice.service;
 
 import com.aditya.transactionservice.dto.TransactionRequest;
+import com.aditya.transactionservice.dto.TransferResponse;
 import com.aditya.transactionservice.entity.Account;
 import com.aditya.transactionservice.entity.Transaction;
 import com.aditya.transactionservice.entity.TransactionStatus;
@@ -9,6 +10,7 @@ import com.aditya.transactionservice.exception.InvalidTransactionException;
 import com.aditya.transactionservice.repository.AccountRepository;
 import com.aditya.transactionservice.repository.TransactionRepository;
 
+import com.sun.jdi.request.DuplicateRequestException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -106,15 +108,27 @@ public class TransactionServiceImpl implements TransactionService {
     }
 
     @Transactional
-    public void transfer(Long sourceId, Long targetId, BigDecimal amount, String idempotencyKey) {
+    public TransferResponse transfer(Long sourceId, Long targetId, BigDecimal amount, String idempotencyKey) {
 
-        String lockKey = "idem:" + idempotencyKey;
+        String key = "idem:" + idempotencyKey;
+
+        Object cached = redisTemplate.opsForValue().get(key);
+
+        if (cached != null && cached instanceof TransferResponse) {
+            return (TransferResponse) cached;
+        }
 
         Boolean acquired = redisTemplate.opsForValue()
-                .setIfAbsent(lockKey, "PROCESSING", Duration.ofMinutes(5));
+                .setIfAbsent(key, "PROCESSING", Duration.ofMinutes(5));
 
         if (Boolean.FALSE.equals(acquired)) {
-            throw new RuntimeException("Duplicate request or already processing");
+            Object retryCheck = redisTemplate.opsForValue().get(key);
+
+            if (retryCheck instanceof TransferResponse) {
+                return (TransferResponse) retryCheck;
+            }
+
+            throw new DuplicateRequestException("Request is already being processed");
         }
 
         try {
@@ -166,13 +180,22 @@ public class TransactionServiceImpl implements TransactionService {
             transactionRepository.save(debitTxn);
             transactionRepository.save(creditTxn);
 
+            String txnId = debitTxn.getId().toString();
+
+            TransferResponse response = new TransferResponse();
+            response.setStatus("SUCCESS");
+            response.setMessage("Transfer completed successfully");
+            response.setTransactionId(txnId);
+
             redisTemplate.opsForValue()
-                    .set(lockKey, "COMPLETED", Duration.ofMinutes(10));
+                    .set(key, response, Duration.ofMinutes(10));
 
             log.info("Transfer completed successfully");
 
+            return response;
+
         } catch (Exception e) {
-            redisTemplate.delete(lockKey);
+            redisTemplate.delete(key);
             throw e;
         }
     }
