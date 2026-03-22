@@ -1,27 +1,17 @@
 package com.aditya.transactionservice.config;
 
-import jakarta.annotation.PostConstruct;
-import jakarta.annotation.PreDestroy;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Profile;
-import redis.embedded.RedisServer;
+import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.data.redis.core.RedisTemplate;
 
 @Configuration
-//@Profile("!test")
 public class RedisConfig {
 
-    private RedisServer redisServer;
-
-//    @PostConstruct
-//    public void startRedis() throws Exception {
-//        redisServer = new RedisServer(6379);
-//        redisServer.start();
-//    }
-
-//    @PreDestroy
-//    public void stopRedis() {
-//        if (redisServer != null) {
-//            redisServer.stop();
-//        }
-//    }
+    @Bean
+    public RedisTemplate<String, Object> redisTemplate(RedisConnectionFactory factory) {
+        RedisTemplate<String, Object> template = new RedisTemplate<>();
+        template.setConnectionFactory(factory);
+        return template;
+    }
 }

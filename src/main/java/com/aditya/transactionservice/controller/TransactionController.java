@@ -1,6 +1,7 @@
 package com.aditya.transactionservice.controller;
 
 import com.aditya.transactionservice.dto.TransactionRequest;
+import com.aditya.transactionservice.dto.TransferRequest;
 import com.aditya.transactionservice.entity.Transaction;
 import com.aditya.transactionservice.service.TransactionService;
 import jakarta.validation.Valid;
@@ -81,18 +82,17 @@ public class TransactionController {
     }
 
     @PostMapping("/transfer")
-    public ResponseEntity<String> transfer(@Valid @RequestBody TransactionRequest request) {
-        log.info("Transfer request: {} -> {} amount {} idempotencyKey {}",
-                request.getSourceId(),
-                request.getTargetId(),
-                request.getAmount(),
-                request.getIdempotencyKey());
+    public ResponseEntity<String> transfer(
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @Valid @RequestBody TransferRequest request) {
+
         transactionService.transfer(
                 request.getSourceId(),
                 request.getTargetId(),
                 request.getAmount(),
-                request.getIdempotencyKey() // IMPORTANT
+                idempotencyKey
         );
+
         return ResponseEntity.ok("Transfer successful");
     }
 

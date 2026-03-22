@@ -23,12 +23,6 @@ public class TransactionRequest {
     @NotNull(message = "Account ID is required")
     private Long accountId;
 
-    @NotBlank
-    private String idempotencyKey;
-
-    private Long sourceId;
-    private Long targetId;
-
     public BigDecimal getAmount() {
         return amount;
     }
@@ -61,27 +55,4 @@ public class TransactionRequest {
         this.accountId = accountId;
     }
 
-    public Long getSourceId() {
-        return sourceId;
-    }
-
-    public void setSourceId(Long sourceId) {
-        this.sourceId = sourceId;
-    }
-
-    public Long getTargetId() {
-        return targetId;
-    }
-
-    public void setTargetId(Long targetId) {
-        this.targetId = targetId;
-    }
-
-    public String getIdempotencyKey() {
-        return idempotencyKey;
-    }
-
-    public void setIdempotencyKey(String idempotencyKey) {
-        this.idempotencyKey = idempotencyKey;
-    }
 }

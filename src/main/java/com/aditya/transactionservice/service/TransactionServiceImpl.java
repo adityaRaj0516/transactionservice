@@ -24,12 +24,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 
 @Service
 public class TransactionServiceImpl implements TransactionService {
 
-//    @Autowired
-//    private RedisTemplate<String, Object> redisTemplate;
+    @Autowired
+    private RedisTemplate<String, Object> redisTemplate;
 
     private static final Logger log =
             LoggerFactory.getLogger(TransactionServiceImpl.class);
@@ -107,25 +108,17 @@ public class TransactionServiceImpl implements TransactionService {
     @Transactional
     public void transfer(Long sourceId, Long targetId, BigDecimal amount, String idempotencyKey) {
 
-        String cacheKey = "idem:" + idempotencyKey;
-        String lockKey = "lock:" + idempotencyKey;
+        String lockKey = "idem:" + idempotencyKey;
 
-//        Object cached = redisTemplate.opsForValue().get(cacheKey);
-//        if (cached != null) {
-//            log.info("Returning cached result for {}", idempotencyKey);
-//            return;
-//        }
+        Boolean acquired = redisTemplate.opsForValue()
+                .setIfAbsent(lockKey, "PROCESSING", Duration.ofMinutes(5));
 
-//        Boolean lockAcquired = redisTemplate.opsForValue()
-//                .setIfAbsent(lockKey, "LOCKED", 10, java.util.concurrent.TimeUnit.SECONDS);
-
-//        if (Boolean.FALSE.equals(lockAcquired)) {
-//            throw new RuntimeException("Duplicate request in progress");
-//        }
+        if (Boolean.FALSE.equals(acquired)) {
+            throw new RuntimeException("Duplicate request or already processing");
+        }
 
         try {
-
-            log.info("Initiating transfer from {} to {} amount {}", sourceId, targetId, amount);
+            log.info("Initiating transfer {} -> {} amount {}", sourceId, targetId, amount);
 
             if (sourceId.equals(targetId)) {
                 throw new InvalidTransactionException("Cannot transfer to same account");
@@ -150,7 +143,6 @@ public class TransactionServiceImpl implements TransactionService {
 
             accountRepository.save(source);
             accountRepository.save(target);
-
             accountRepository.flush();
 
             Transaction debitTxn = new Transaction(
@@ -174,21 +166,14 @@ public class TransactionServiceImpl implements TransactionService {
             transactionRepository.save(debitTxn);
             transactionRepository.save(creditTxn);
 
+            redisTemplate.opsForValue()
+                    .set(lockKey, "COMPLETED", Duration.ofMinutes(10));
+
             log.info("Transfer completed successfully");
 
-//            redisTemplate.opsForValue()
-//                    .set(cacheKey, "SUCCESS", 10, java.util.concurrent.TimeUnit.MINUTES);
-
-        } catch (ObjectOptimisticLockingFailureException e) {
-            log.error("Concurrency conflict detected", e);
-            throw new RuntimeException("Concurrent update detected. Please retry.");
-
-        } catch (org.springframework.dao.DataIntegrityViolationException e) {
-            log.warn("Duplicate transaction detected for key {}", idempotencyKey);
-            return;
-
-        } finally {
-//            redisTemplate.delete(lockKey);
+        } catch (Exception e) {
+            redisTemplate.delete(lockKey);
+            throw e;
         }
     }
 
