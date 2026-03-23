@@ -25,9 +25,6 @@ public class Transaction {
     @Enumerated(EnumType.STRING)
     private TransactionType type;
 
-    @Column(name = "idempotency_key", nullable = false, unique = true)
-    private String idempotencyKey;
-
     public Transaction() {
 
     }
@@ -105,13 +102,5 @@ public class Transaction {
         }
 
         this.status = newStatus;
-    }
-
-    public String getIdempotencyKey() {
-        return idempotencyKey;
-    }
-
-    public void setIdempotencyKey(String idempotencyKey) {
-        this.idempotencyKey = idempotencyKey;
     }
 }

@@ -5,7 +5,10 @@ import com.aditya.transactionservice.dto.TransferRequest;
 import com.aditya.transactionservice.dto.TransferResponse;
 import com.aditya.transactionservice.entity.Transaction;
 import com.aditya.transactionservice.service.TransactionService;
+import com.aditya.transactionservice.service.TransferService;
+import com.aditya.transactionservice.service.TransferServiceImpl;
 import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
@@ -18,6 +21,9 @@ import java.util.List;
 @RestController
 @RequestMapping("/transactions")
 public class TransactionController {
+
+    @Autowired
+    private TransferService transferService;
 
     private static final Logger log =
             LoggerFactory.getLogger(TransactionController.class);
@@ -87,7 +93,7 @@ public class TransactionController {
             @RequestHeader("Idempotency-Key") String key,
             @Valid @RequestBody TransferRequest request) {
 
-        TransferResponse response = transactionService.transfer(
+        TransferResponse response = transferService.transfer(
                 request.getSourceId(),
                 request.getTargetId(),
                 request.getAmount(),
@@ -96,6 +102,4 @@ public class TransactionController {
 
         return ResponseEntity.ok(response);
     }
-
 }
-
