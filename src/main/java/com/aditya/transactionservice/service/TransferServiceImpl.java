@@ -2,6 +2,8 @@ package com.aditya.transactionservice.service;
 
 import com.aditya.transactionservice.dto.TransferResponse;
 import com.aditya.transactionservice.entity.*;
+import com.aditya.transactionservice.exception.DuplicateRequestException;
+import com.aditya.transactionservice.exception.InsufficientBalanceException;
 import com.aditya.transactionservice.exception.InvalidTransactionException;
 import com.aditya.transactionservice.repository.AccountRepository;
 import com.aditya.transactionservice.repository.TransactionRepository;
@@ -17,7 +19,6 @@ import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
 import java.time.Duration;
-import java.util.Optional;
 
 @Service
 public class TransferServiceImpl implements TransferService {
@@ -40,14 +41,24 @@ public class TransferServiceImpl implements TransferService {
         this.transferRepository = transferRepository;
     }
 
+    @Override
     @Transactional
     public TransferResponse transfer(Long sourceId, Long targetId,
                                      BigDecimal amount, String idempotencyKey) {
 
         String redisKey = "idem:" + idempotencyKey;
 
+        log.info("Transfer request source={} target={} amount={} key={}",
+                sourceId, targetId, amount, idempotencyKey);
+
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            log.warn("Missing idempotency key");
+            throw new InvalidTransactionException("Idempotency key required");
+        }
+
         Object cached = redisTemplate.opsForValue().get(redisKey);
         if (cached instanceof TransferResponse) {
+            log.info("Idempotency cache hit key={}", idempotencyKey);
             return (TransferResponse) cached;
         }
 
@@ -55,30 +66,63 @@ public class TransferServiceImpl implements TransferService {
                 .setIfAbsent(redisKey, "PROCESSING", Duration.ofMinutes(5));
 
         if (Boolean.FALSE.equals(acquired)) {
-            Object retryCheck = redisTemplate.opsForValue().get(redisKey);
-            if (retryCheck instanceof TransferResponse) {
-                return (TransferResponse) retryCheck;
+            log.warn("Duplicate request in progress key={}", idempotencyKey);
+
+            Object retry = redisTemplate.opsForValue().get(redisKey);
+            if (retry instanceof TransferResponse) {
+                return (TransferResponse) retry;
             }
-            throw new RuntimeException("Request already processing");
+
+            throw new DuplicateRequestException("Request already processing");
         }
 
-        try {
-            log.info("Initiating transfer {} -> {} amount {}", sourceId, targetId, amount);
+        Transfer transfer = null;
 
-            Optional<Transfer> existing = transferRepository.findByIdempotencyKey(idempotencyKey);
-            if (existing.isPresent()) {
-                return mapToResponse(existing.get());
+        try {
+
+            Transfer existing = transferRepository.findByIdempotencyKey(idempotencyKey).orElse(null);
+
+            if (existing != null) {
+
+                boolean sameRequest =
+                        existing.getSourceAccountId().equals(sourceId) &&
+                                existing.getTargetAccountId().equals(targetId) &&
+                                existing.getAmount().compareTo(amount) == 0;
+
+                if (!sameRequest) {
+                    log.warn("Idempotency key conflict key={} existing=[{} -> {} : {}] incoming=[{} -> {} : {}]",
+                            idempotencyKey,
+                            existing.getSourceAccountId(),
+                            existing.getTargetAccountId(),
+                            existing.getAmount(),
+                            sourceId,
+                            targetId,
+                            amount
+                    );
+                    throw new InvalidTransactionException("Idempotency key reused with different request");
+                }
+
+                log.info("DB idempotency hit key={}", idempotencyKey);
+
+                TransferResponse response = mapToResponse(existing);
+
+                redisTemplate.opsForValue()
+                        .set(redisKey, response, Duration.ofMinutes(10));
+
+                return response;
             }
 
             if (sourceId.equals(targetId)) {
+                log.warn("Same account transfer sourceId={}", sourceId);
                 throw new InvalidTransactionException("Cannot transfer to same account");
             }
 
-            if (amount.compareTo(BigDecimal.ZERO) <= 0) {
+            if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+                log.warn("Invalid amount {}", amount);
                 throw new InvalidTransactionException("Amount must be positive");
             }
 
-            Transfer transfer = new Transfer();
+            transfer = new Transfer();
             transfer.setIdempotencyKey(idempotencyKey);
             transfer.setSourceAccountId(sourceId);
             transfer.setTargetAccountId(targetId);
@@ -86,22 +130,35 @@ public class TransferServiceImpl implements TransferService {
             transfer.setStatus(TransactionStatus.INITIATED);
 
             try {
-                transferRepository.save(transfer); // DB-level idempotency guard
+                transferRepository.save(transfer);
             } catch (DataIntegrityViolationException e) {
+                log.warn("DB duplicate key hit key={}", idempotencyKey);
+
                 Transfer existingTransfer = transferRepository
                         .findByIdempotencyKey(idempotencyKey)
-                        .orElseThrow(() -> new RuntimeException("Inconsistent state"));
-                return mapToResponse(existingTransfer);
+                        .orElseThrow(() ->
+                                new InvalidTransactionException("Inconsistent idempotency state"));
+
+                TransferResponse response = mapToResponse(existingTransfer);
+
+                redisTemplate.opsForValue()
+                        .set(redisKey, response, Duration.ofMinutes(10));
+
+                return response;
             }
 
             Account source = accountRepository.findById(sourceId)
-                    .orElseThrow(() -> new InvalidTransactionException("Source account not found"));
+                    .orElseThrow(() ->
+                            new InvalidTransactionException("Source account not found"));
 
             Account target = accountRepository.findById(targetId)
-                    .orElseThrow(() -> new InvalidTransactionException("Target account not found"));
+                    .orElseThrow(() ->
+                            new InvalidTransactionException("Target account not found"));
 
             if (source.getBalance().compareTo(amount) < 0) {
-                throw new InvalidTransactionException("Insufficient balance");
+                log.warn("Insufficient balance sourceId={} balance={} requested={}",
+                        sourceId, source.getBalance(), amount);
+                throw new InsufficientBalanceException("Insufficient balance");
             }
 
             source.setBalance(source.getBalance().subtract(amount));
@@ -111,27 +168,27 @@ public class TransferServiceImpl implements TransferService {
             accountRepository.save(target);
             accountRepository.flush();
 
-            Transaction debitTxn = new Transaction(
+            Transaction debit = new Transaction(
                     amount,
                     TransactionType.DEBIT,
                     "Transfer to account " + targetId
             );
-            debitTxn.setAccount(source);
-            debitTxn.updateStatus(TransactionStatus.SUCCESS);
+            debit.setAccount(source);
+            debit.updateStatus(TransactionStatus.SUCCESS);
 
-            Transaction creditTxn = new Transaction(
+            Transaction credit = new Transaction(
                     amount,
                     TransactionType.CREDIT,
                     "Transfer from account " + sourceId
             );
-            creditTxn.setAccount(target);
-            creditTxn.updateStatus(TransactionStatus.SUCCESS);
+            credit.setAccount(target);
+            credit.updateStatus(TransactionStatus.SUCCESS);
 
-            transactionRepository.save(debitTxn);
-            transactionRepository.save(creditTxn);
+            transactionRepository.save(debit);
+            transactionRepository.save(credit);
 
             transfer.setStatus(TransactionStatus.SUCCESS);
-            transfer.setTransactionId(debitTxn.getId().toString());
+            transfer.setTransactionId(debit.getId().toString());
             transferRepository.save(transfer);
 
             TransferResponse response = mapToResponse(transfer);
@@ -139,11 +196,23 @@ public class TransferServiceImpl implements TransferService {
             redisTemplate.opsForValue()
                     .set(redisKey, response, Duration.ofMinutes(10));
 
+            log.info("Transfer success txnId={} key={}",
+                    transfer.getTransactionId(), idempotencyKey);
+
             return response;
 
-        } catch (Exception e) {
+        } catch (Exception ex) {
+
+            log.error("Transfer failed key={} reason={}", idempotencyKey, ex.getMessage());
+
+            if (transfer != null) {
+                transfer.setStatus(TransactionStatus.FAILED);
+                transferRepository.save(transfer);
+            }
+
             redisTemplate.delete(redisKey);
-            throw e;
+
+            throw ex;
         }
     }
 
