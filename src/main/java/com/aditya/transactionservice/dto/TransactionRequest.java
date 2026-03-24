@@ -4,9 +4,9 @@ import com.aditya.transactionservice.entity.TransactionType;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
-
 
 public class TransactionRequest {
 
@@ -18,6 +18,7 @@ public class TransactionRequest {
     private TransactionType type;
 
     @NotBlank(message = "Description cannot be empty")
+    @Size(max = 255, message = "Description too long")
     private String description;
 
     @NotNull(message = "Account ID is required")
@@ -44,7 +45,7 @@ public class TransactionRequest {
     }
 
     public void setDescription(String description) {
-        this.description = description;
+        this.description = description != null ? description.trim() : null;
     }
 
     public Long getAccountId() {
@@ -54,5 +55,4 @@ public class TransactionRequest {
     public void setAccountId(Long accountId) {
         this.accountId = accountId;
     }
-
 }
