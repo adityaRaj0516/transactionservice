@@ -43,7 +43,7 @@ public class TransferServiceImpl implements TransferService {
     }
 
     @Override
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public TransferResponse transfer(Long sourceId, Long targetId,
                                      BigDecimal amount, String idempotencyKey) {
 
@@ -120,9 +120,6 @@ public class TransferServiceImpl implements TransferService {
 
                 IdempotencyRecord record = new IdempotencyRecord(requestHash, response);
 
-                redisTemplate.opsForValue()
-                        .set(dataKey, record, Duration.ofMinutes(10));
-
                 return response;
             }
 
@@ -157,17 +154,14 @@ public class TransferServiceImpl implements TransferService {
 
                 IdempotencyRecord record = new IdempotencyRecord(requestHash, response);
 
-                redisTemplate.opsForValue()
-                        .set(dataKey, record, Duration.ofMinutes(10));
-
                 return response;
             }
 
-            Account source = accountRepository.findById(sourceId)
+            Account source = accountRepository.findByIdForUpdate(sourceId)
                     .orElseThrow(() ->
                             new InvalidTransactionException("Source account not found"));
 
-            Account target = accountRepository.findById(targetId)
+            Account target = accountRepository.findByIdForUpdate(targetId)
                     .orElseThrow(() ->
                             new InvalidTransactionException("Target account not found"));
 
@@ -182,7 +176,6 @@ public class TransferServiceImpl implements TransferService {
 
             accountRepository.save(source);
             accountRepository.save(target);
-            accountRepository.flush();
 
             Transaction debit = new Transaction(
                     amount,
@@ -228,8 +221,15 @@ public class TransferServiceImpl implements TransferService {
                 transferRepository.save(transfer);
             }
 
-            redisTemplate.delete(lockKey);
-            redisTemplate.delete(dataKey);
+            TransferResponse failedResponse = new TransferResponse();
+            failedResponse.setStatus("FAILED");
+            failedResponse.setMessage(ex.getMessage());
+            failedResponse.setTransactionId(null);
+
+            IdempotencyRecord record = new IdempotencyRecord(requestHash, failedResponse);
+
+            redisTemplate.opsForValue()
+                    .set(dataKey, record, Duration.ofMinutes(10));
 
             throw ex;
         }
@@ -242,11 +242,17 @@ public class TransferServiceImpl implements TransferService {
                 transferRepository.save(transfer);
             }
 
-            redisTemplate.delete(lockKey);
-            redisTemplate.delete(dataKey);
+            TransferResponse failedResponse = new TransferResponse();
+            failedResponse.setStatus("FAILED");
+            failedResponse.setMessage("Internal error");
+            failedResponse.setTransactionId(null);
 
-            throw new RuntimeException("Internal error");
+            IdempotencyRecord record = new IdempotencyRecord(requestHash, failedResponse);
 
+            redisTemplate.opsForValue()
+                    .set(dataKey, record, Duration.ofMinutes(10));
+
+            throw ex;
         } finally {
             redisTemplate.delete(lockKey);
         }
