@@ -8,25 +8,33 @@ import java.time.LocalDateTime;
 @Entity
 @Table(name = "transactions")
 public class Transaction {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @Column(nullable = false)
     private BigDecimal amount;
+
+    @Column(nullable = false)
     private String description;
+
+    @Column(nullable = false)
     private LocalDateTime createdAt;
 
     @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
     private TransactionStatus status;
 
-    @ManyToOne
-    @JoinColumn(name = "account_id")
+    @ManyToOne(optional = false)
+    @JoinColumn(name = "account_id", nullable = false)
     private Account account;
 
     @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
     private TransactionType type;
 
     public Transaction() {
-
     }
 
     public Transaction(BigDecimal amount, TransactionType type, String description) {
@@ -37,12 +45,18 @@ public class Transaction {
         this.createdAt = LocalDateTime.now();
     }
 
-    public Long getId() {
-        return id;
+    @PrePersist
+    public void prePersist() {
+        if (createdAt == null) {
+            createdAt = LocalDateTime.now();
+        }
+        if (status == null) {
+            status = TransactionStatus.INITIATED;
+        }
     }
 
-    public void setId(Long id) {
-        this.id = id;
+    public Long getId() {
+        return id;
     }
 
     public void setAmount(BigDecimal amount) {
@@ -57,16 +71,8 @@ public class Transaction {
         this.description = description;
     }
 
-    public void setCreatedAt(LocalDateTime createdAt) {
-        this.createdAt = createdAt;
-    }
-
     public void setStatus(TransactionStatus status) {
         this.status = status;
-    }
-
-    public Account getAccount() {
-        return account;
     }
 
     public void setAccount(Account account) {
@@ -93,11 +99,14 @@ public class Transaction {
         return createdAt;
     }
 
+    public Account getAccount() {
+        return account;
+    }
+
     public void updateStatus(TransactionStatus newStatus) {
 
         if (this.status == TransactionStatus.SUCCESS ||
                 this.status == TransactionStatus.FAILED) {
-
             throw new IllegalStateException("Cannot change status from terminal state");
         }
 

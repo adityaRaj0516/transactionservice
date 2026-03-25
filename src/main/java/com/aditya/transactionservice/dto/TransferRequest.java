@@ -2,6 +2,8 @@ package com.aditya.transactionservice.dto;
 
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.AssertTrue;
+
 import java.math.BigDecimal;
 
 public class TransferRequest {
@@ -15,12 +17,6 @@ public class TransferRequest {
     @NotNull
     @Positive
     private BigDecimal amount;
-
-    @AssertTrue(message = "Source and target accounts must be different")
-    public boolean isValidTransfer() {
-        if (sourceId == null || targetId == null) return true;
-        return !sourceId.equals(targetId);
-    }
 
     public Long getSourceId() {
         return sourceId;

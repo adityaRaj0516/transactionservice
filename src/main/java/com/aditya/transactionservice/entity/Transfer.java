@@ -17,15 +17,22 @@ public class Transfer {
     @Column(name = "idempotency_key", nullable = false)
     private String idempotencyKey;
 
+    @Column(nullable = false)
     private Long sourceAccountId;
+
+    @Column(nullable = false)
     private Long targetAccountId;
 
+    @Column(nullable = false)
     private BigDecimal amount;
 
     @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
     private TransactionStatus status;
 
     private String transactionId;
+
+    public Long getId() { return id; }
 
     public String getIdempotencyKey() { return idempotencyKey; }
     public void setIdempotencyKey(String idempotencyKey) { this.idempotencyKey = idempotencyKey; }

@@ -5,6 +5,7 @@ import com.aditya.transactionservice.entity.*;
 import com.aditya.transactionservice.exception.DuplicateRequestException;
 import com.aditya.transactionservice.exception.InsufficientBalanceException;
 import com.aditya.transactionservice.exception.InvalidTransactionException;
+import com.aditya.transactionservice.idempotency.IdempotencyRecord;
 import com.aditya.transactionservice.repository.AccountRepository;
 import com.aditya.transactionservice.repository.TransactionRepository;
 import com.aditya.transactionservice.repository.TransferRepository;
@@ -46,7 +47,8 @@ public class TransferServiceImpl implements TransferService {
     public TransferResponse transfer(Long sourceId, Long targetId,
                                      BigDecimal amount, String idempotencyKey) {
 
-        String redisKey = "idem:" + idempotencyKey;
+        String dataKey = "idem:" + idempotencyKey + ":data";
+        String lockKey = "idem:" + idempotencyKey + ":lock";
 
         log.info("Transfer request source={} target={} amount={} key={}",
                 sourceId, targetId, amount, idempotencyKey);
@@ -56,21 +58,31 @@ public class TransferServiceImpl implements TransferService {
             throw new InvalidTransactionException("Idempotency key required");
         }
 
-        Object cached = redisTemplate.opsForValue().get(redisKey);
-        if (cached instanceof TransferResponse) {
-            log.info("Idempotency cache hit key={}", idempotencyKey);
-            return (TransferResponse) cached;
+        String payload = sourceId + ":" + targetId + ":" + amount;
+        String requestHash = org.apache.commons.codec.digest.DigestUtils.sha256Hex(payload);
+
+        Object cached = redisTemplate.opsForValue().get(dataKey);
+        if (cached instanceof IdempotencyRecord record) {
+            if (record.getHash().equals(requestHash)) {
+                log.info("Idempotency cache hit key={}", idempotencyKey);
+                return record.getResponse();
+            } else {
+                log.warn("Idempotency key reuse with different payload key={}", idempotencyKey);
+                throw new InvalidTransactionException("Idempotency key reused with different request");
+            }
         }
 
         Boolean acquired = redisTemplate.opsForValue()
-                .setIfAbsent(redisKey, "PROCESSING", Duration.ofMinutes(5));
+                .setIfAbsent(lockKey, "LOCKED", Duration.ofMinutes(5));
 
         if (Boolean.FALSE.equals(acquired)) {
             log.warn("Duplicate request in progress key={}", idempotencyKey);
 
-            Object retry = redisTemplate.opsForValue().get(redisKey);
-            if (retry instanceof TransferResponse) {
-                return (TransferResponse) retry;
+            Object retry = redisTemplate.opsForValue().get(dataKey);
+            if (retry instanceof IdempotencyRecord record) {
+                if (record.getHash().equals(requestHash)) {
+                    return record.getResponse();
+                }
             }
 
             throw new DuplicateRequestException("Request already processing");
@@ -106,8 +118,10 @@ public class TransferServiceImpl implements TransferService {
 
                 TransferResponse response = mapToResponse(existing);
 
+                IdempotencyRecord record = new IdempotencyRecord(requestHash, response);
+
                 redisTemplate.opsForValue()
-                        .set(redisKey, response, Duration.ofMinutes(10));
+                        .set(dataKey, record, Duration.ofMinutes(10));
 
                 return response;
             }
@@ -141,8 +155,10 @@ public class TransferServiceImpl implements TransferService {
 
                 TransferResponse response = mapToResponse(existingTransfer);
 
+                IdempotencyRecord record = new IdempotencyRecord(requestHash, response);
+
                 redisTemplate.opsForValue()
-                        .set(redisKey, response, Duration.ofMinutes(10));
+                        .set(dataKey, record, Duration.ofMinutes(10));
 
                 return response;
             }
@@ -193,26 +209,46 @@ public class TransferServiceImpl implements TransferService {
 
             TransferResponse response = mapToResponse(transfer);
 
+            IdempotencyRecord record = new IdempotencyRecord(requestHash, response);
+
             redisTemplate.opsForValue()
-                    .set(redisKey, response, Duration.ofMinutes(10));
+                    .set(dataKey, record, Duration.ofMinutes(10));
 
             log.info("Transfer success txnId={} key={}",
                     transfer.getTransactionId(), idempotencyKey);
 
             return response;
 
-        } catch (Exception ex) {
+        }catch (InvalidTransactionException | InsufficientBalanceException ex) {
 
-            log.error("Transfer failed key={} reason={}", idempotencyKey, ex.getMessage());
+            log.warn("Business validation failed key={} reason={}", idempotencyKey, ex.getMessage());
 
             if (transfer != null) {
                 transfer.setStatus(TransactionStatus.FAILED);
                 transferRepository.save(transfer);
             }
 
-            redisTemplate.delete(redisKey);
+            redisTemplate.delete(lockKey);
+            redisTemplate.delete(dataKey);
 
             throw ex;
+        }
+        catch (Exception ex) {
+
+            log.error("Unexpected failure key={} reason={}", idempotencyKey, ex.getMessage());
+
+            if (transfer != null) {
+                transfer.setStatus(TransactionStatus.FAILED);
+                transferRepository.save(transfer);
+            }
+
+            redisTemplate.delete(lockKey);
+            redisTemplate.delete(dataKey);
+
+            throw new RuntimeException("Internal error");
+
+        } finally {
+            redisTemplate.delete(lockKey);
         }
     }
 

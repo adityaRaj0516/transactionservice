@@ -56,6 +56,15 @@ public class GlobalExceptionHandler {
             Exception ex,
             HttpServletRequest request
     ) {
+
+        if (ex instanceof org.springframework.web.server.ResponseStatusException rse) {
+            return buildResponse(ex, request, HttpStatus.valueOf(rse.getStatusCode().value()));
+        }
+
+        if (ex instanceof jakarta.validation.ConstraintViolationException) {
+            return buildResponse(ex, request, HttpStatus.BAD_REQUEST);
+        }
+
         return buildResponse(ex, request, HttpStatus.INTERNAL_SERVER_ERROR);
     }
 
