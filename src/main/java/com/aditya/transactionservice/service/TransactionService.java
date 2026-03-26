@@ -12,7 +12,7 @@ import java.util.List;
 
 public interface TransactionService {
 
-    Transaction createTransaction(TransactionRequest request);
+    Transaction createTransaction(TransactionRequest request, String key);
     Transaction getById(Long id);
     Page<Transaction> getAllTransactions(Pageable pageable);
     Page<Transaction> getTransactionsByAccount(Long accountId, int page, int size);

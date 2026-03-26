@@ -59,6 +59,10 @@ public class Transaction {
         return id;
     }
 
+    public void setId(Long id) {
+        this.id = id;
+    }
+
     public void setAmount(BigDecimal amount) {
         this.amount = amount;
     }

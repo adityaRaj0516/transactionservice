@@ -1,47 +1,23 @@
 package com.aditya.transactionservice.dto;
 
+import com.aditya.transactionservice.entity.TransactionStatus;
+import com.aditya.transactionservice.entity.TransactionType;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
+import java.math.BigDecimal;
+
+@AllArgsConstructor
+@NoArgsConstructor
+@Getter
+@Setter
 public class TransferResponse {
 
-    private String status;
+    private Long id;
+    private BigDecimal amount;
+    private TransactionType type;
+    private TransactionStatus status;
     private String message;
-    private String transactionId;
-
-    public static TransferResponse success(String transactionId) {
-        TransferResponse response = new TransferResponse();
-        response.setStatus("SUCCESS");
-        response.setMessage("Transfer completed successfully");
-        response.setTransactionId(transactionId);
-        return response;
-    }
-
-    public static TransferResponse failure(String message) {
-        TransferResponse response = new TransferResponse();
-        response.setStatus("FAILED");
-        response.setMessage(message);
-        return response;
-    }
-
-    public String getStatus() {
-        return status;
-    }
-
-    public void setStatus(String status) {
-        this.status = status;
-    }
-
-    public String getMessage() {
-        return message;
-    }
-
-    public void setMessage(String message) {
-        this.message = message;
-    }
-
-    public String getTransactionId() {
-        return transactionId;
-    }
-
-    public void setTransactionId(String transactionId) {
-        this.transactionId = transactionId;
-    }
 }

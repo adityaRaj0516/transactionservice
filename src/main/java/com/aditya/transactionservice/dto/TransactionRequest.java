@@ -28,6 +28,8 @@ public class TransactionRequest {
         return amount;
     }
 
+    private String idempotencyKey;
+
     public void setAmount(BigDecimal amount) {
         this.amount = amount;
     }
@@ -54,5 +56,13 @@ public class TransactionRequest {
 
     public void setAccountId(Long accountId) {
         this.accountId = accountId;
+    }
+
+    public String getIdempotencyKey() {
+        return idempotencyKey;
+    }
+
+    public void setIdempotencyKey(String idempotencyKey) {
+        this.idempotencyKey = idempotencyKey;
     }
 }

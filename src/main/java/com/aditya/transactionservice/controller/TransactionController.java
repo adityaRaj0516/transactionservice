@@ -47,13 +47,14 @@ public class TransactionController {
 
     @PostMapping
     public ResponseEntity<Transaction> create(
+            @RequestHeader("Idempotency-Key") String key,
             @Valid @RequestBody TransactionRequest request) {
 
-        log.info("Create transaction accountId={} amount={}",
-                request.getAccountId(), request.getAmount());
+        log.info("Create transaction accountId={} amount={} key={}",
+                request.getAccountId(), request.getAmount(), key);
 
         return ResponseEntity.ok(
-                transactionService.createTransaction(request)
+                transactionService.createTransaction(request, key)
         );
     }
 
@@ -101,9 +102,7 @@ public class TransactionController {
                 key);
 
         TransferResponse response = transferService.transfer(
-                request.getSourceId(),
-                request.getTargetId(),
-                request.getAmount(),
+                request,
                 key
         );
 
