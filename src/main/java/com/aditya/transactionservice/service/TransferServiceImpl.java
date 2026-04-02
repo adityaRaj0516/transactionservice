@@ -16,8 +16,8 @@ public class TransferServiceImpl implements TransferService {
     @Override
     public TransferResponse transfer(TransferRequest request, String idempotencyKey) {
 
-        if (idempotencyKey == null || idempotencyKey.isBlank()) {
-            throw new InvalidTransactionException("Idempotency key required");
+        if (request.getSourceId().equals(request.getTargetId())) {
+            throw new InvalidTransactionException("Source and target cannot be same");
         }
 
         return orchestrator.execute(request, idempotencyKey);

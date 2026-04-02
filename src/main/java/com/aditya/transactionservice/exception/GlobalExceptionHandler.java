@@ -76,6 +76,14 @@ public class GlobalExceptionHandler {
         return buildResponse(ex, request, HttpStatus.INTERNAL_SERVER_ERROR);
     }
 
+    @ExceptionHandler(org.springframework.web.bind.MissingRequestHeaderException.class)
+    public ResponseEntity<ErrorResponse> handleMissingHeader(
+            org.springframework.web.bind.MissingRequestHeaderException ex,
+            HttpServletRequest request
+    ) {
+        return buildResponse(ex, request, HttpStatus.BAD_REQUEST);
+    }
+
     private ResponseEntity<ErrorResponse> buildResponse(
             Exception ex,
             HttpServletRequest request,

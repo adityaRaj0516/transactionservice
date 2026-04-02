@@ -47,7 +47,7 @@ public class TransactionController {
 
     @PostMapping
     public ResponseEntity<Transaction> create(
-            @RequestHeader("Idempotency-Key") String key,
+            @RequestHeader("Idempotency-Key") @NotBlank String key,
             @Valid @RequestBody TransactionRequest request) {
 
         log.info("Create transaction accountId={} amount={} key={}",
