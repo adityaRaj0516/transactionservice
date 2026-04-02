@@ -3,6 +3,7 @@ package com.aditya.transactionservice.service;
 import com.aditya.transactionservice.dto.TransferRequest;
 import com.aditya.transactionservice.dto.TransferResponse;
 
+import com.aditya.transactionservice.exception.InvalidTransactionException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -16,7 +17,7 @@ public class TransferServiceImpl implements TransferService {
     public TransferResponse transfer(TransferRequest request, String idempotencyKey) {
 
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
-            throw new RuntimeException("Idempotency key required");
+            throw new InvalidTransactionException("Idempotency key required");
         }
 
         return orchestrator.execute(request, idempotencyKey);

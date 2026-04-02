@@ -2,6 +2,9 @@ package com.aditya.transactionservice.service;
 
 import com.aditya.transactionservice.dto.TransferResponse;
 import com.aditya.transactionservice.entity.*;
+import com.aditya.transactionservice.exception.DuplicateRequestException;
+import com.aditya.transactionservice.exception.InvalidTransactionException;
+import com.aditya.transactionservice.exception.TransferProcessingException;
 import com.aditya.transactionservice.idempotency.IdempotencyRecord;
 import com.aditya.transactionservice.idempotency.IdempotencyService;
 import com.aditya.transactionservice.repository.AccountRepository;
@@ -40,15 +43,15 @@ public class TransferOrchestrator {
                 sourceId, targetId, amount, key);
 
         if (key == null || key.isBlank()) {
-            throw new RuntimeException("Idempotency key required");
+            throw new InvalidTransactionException("Idempotency key required");
         }
 
         if (sourceId.equals(targetId)) {
-            throw new RuntimeException("Cannot transfer to same account");
+            throw new InvalidTransactionException("Cannot transfer to same account");
         }
 
         if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new RuntimeException("Amount must be greater than zero");
+            throw new InvalidTransactionException("Amount must be greater than zero");
         }
 
         idempotencyService.validate(key, requestHash);
@@ -67,7 +70,7 @@ public class TransferOrchestrator {
             lockAcquired = idempotencyService.acquireLock(key);
 
             if (!lockAcquired) {
-                throw new RuntimeException("Duplicate request in progress");
+                throw new DuplicateRequestException("Duplicate request in progress");
             }
             // Lock ordering
             Account first = sourceId < targetId
@@ -123,9 +126,7 @@ public class TransferOrchestrator {
 
             return response;
 
-        } cat
-
-    ch (Exception ex) {
+        } catch (InvalidTransactionException | DuplicateRequestException ex) {
 
             log.error("Transfer failed key={} error={}", key, ex.getMessage(), ex);
 
@@ -136,6 +137,16 @@ public class TransferOrchestrator {
 
             throw ex;
 
+        } catch (Exception ex) {
+
+            log.error("Transfer failed key={} error={}", key, ex.getMessage(), ex);
+
+            IdempotencyRecord record =
+                    new IdempotencyRecord(key, requestHash, null, "FAILURE");
+
+            idempotencyService.saveFailure(key, record);
+
+            throw new TransferProcessingException("Transfer failed", ex);
         } finally {
             if (lockAcquired) {
                 idempotencyService.releaseLock(key);

@@ -6,7 +6,9 @@ import com.aditya.transactionservice.entity.Account;
 import com.aditya.transactionservice.entity.Transaction;
 import com.aditya.transactionservice.entity.TransactionStatus;
 import com.aditya.transactionservice.entity.TransactionType;
+import com.aditya.transactionservice.exception.DuplicateRequestException;
 import com.aditya.transactionservice.exception.InvalidTransactionException;
+import com.aditya.transactionservice.exception.TransferProcessingException;
 import com.aditya.transactionservice.idempotency.IdempotencyRecord;
 import com.aditya.transactionservice.idempotency.IdempotencyService;
 import com.aditya.transactionservice.repository.AccountRepository;
@@ -51,7 +53,7 @@ public class TransactionServiceImpl implements TransactionService {
                 request.getAccountId(), request.getAmount(), request.getType(), key);
 
         if (key == null || key.isBlank()) {
-            throw new RuntimeException("Idempotency key required");
+            throw new InvalidTransactionException("Idempotency key required");
         }
 
         BigDecimal amount = request.getAmount();
@@ -71,7 +73,7 @@ public class TransactionServiceImpl implements TransactionService {
         }
 
         if (!idempotencyService.acquireLock(key)) {
-            throw new RuntimeException("Duplicate request in progress");
+            throw new DuplicateRequestException("Duplicate request in progress");
         }
 
         try {
@@ -115,20 +117,27 @@ public class TransactionServiceImpl implements TransactionService {
 
             return saved;
 
-        } catch (Exception ex) {
+        } catch (InvalidTransactionException | DuplicateRequestException ex) {
 
             log.error("Transaction failed key={} error={}", key, ex.getMessage(), ex);
 
-            IdempotencyRecord record = new IdempotencyRecord(
-                    key,
-                    requestHash,
-                    null,
-                    "FAILURE"
-            );
+            IdempotencyRecord record =
+                    new IdempotencyRecord(key, requestHash, null, "FAILURE");
 
             idempotencyService.saveFailure(key, record);
 
             throw ex;
+
+        } catch (Exception ex) {
+
+            log.error("Transaction failed key={} error={}", key, ex.getMessage(), ex);
+
+            IdempotencyRecord record =
+                    new IdempotencyRecord(key, requestHash, null, "FAILURE");
+
+            idempotencyService.saveFailure(key, record);
+
+            throw new TransferProcessingException("Transaction failed", ex);
 
         } finally {
             idempotencyService.releaseLock(key);

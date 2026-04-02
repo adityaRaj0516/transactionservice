@@ -13,6 +13,14 @@ import java.util.stream.Collectors;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    @ExceptionHandler(TransferProcessingException.class)
+    public ResponseEntity<ErrorResponse> handleProcessing(
+            TransferProcessingException ex,
+            HttpServletRequest request
+    ) {
+        return buildResponse(ex, request, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+
     @ExceptionHandler(InvalidTransactionException.class)
     public ResponseEntity<ErrorResponse> handleInvalid(
             InvalidTransactionException ex,
@@ -48,7 +56,7 @@ public class GlobalExceptionHandler {
                 .map(error -> error.getField() + ": " + error.getDefaultMessage())
                 .collect(Collectors.joining(", "));
 
-        return buildResponse(new RuntimeException(message), request, HttpStatus.BAD_REQUEST);
+        return buildResponse(new InvalidTransactionException(message), request, HttpStatus.BAD_REQUEST);
     }
 
     @ExceptionHandler(Exception.class)

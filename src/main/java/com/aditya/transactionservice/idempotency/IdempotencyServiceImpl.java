@@ -1,5 +1,7 @@
 package com.aditya.transactionservice.idempotency;
 
+import com.aditya.transactionservice.exception.DuplicateRequestException;
+import com.aditya.transactionservice.exception.TransferProcessingException;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,7 +40,7 @@ public class IdempotencyServiceImpl implements IdempotencyService {
             return Optional.of(record);
         } catch (ClassCastException ex) {
             log.error("Invalid object type in Redis for key={}", key);
-            throw new RuntimeException("Corrupted idempotency record");
+            throw new TransferProcessingException("Corrupted idempotency record", ex);
         }
     }
 
@@ -57,7 +59,7 @@ public class IdempotencyServiceImpl implements IdempotencyService {
             log.error("Idempotency hash mismatch key={} storedHash={} incomingHash={}",
                     key, record.getRequestHash(), requestHash);
 
-            throw new RuntimeException("Idempotency key reused with different request");
+            throw new DuplicateRequestException("Idempotency key reused with different request");
         }
 
         log.debug("Idempotency validated key={}", key);
