@@ -3,6 +3,7 @@ package com.aditya.transactionservice.service;
 import com.aditya.transactionservice.dto.TransferResponse;
 import com.aditya.transactionservice.entity.*;
 import com.aditya.transactionservice.exception.DuplicateRequestException;
+import com.aditya.transactionservice.exception.InsufficientBalanceException;
 import com.aditya.transactionservice.exception.InvalidTransactionException;
 import com.aditya.transactionservice.exception.TransferProcessingException;
 import com.aditya.transactionservice.idempotency.IdempotencyRecord;
@@ -42,6 +43,7 @@ public class TransferOrchestrator {
         log.info("Transfer request received: {} -> {} amount={} key={}",
                 sourceId, targetId, amount, key);
 
+        // ---- Basic validations ----
         if (key == null || key.isBlank()) {
             throw new InvalidTransactionException("Idempotency key required");
         }
@@ -54,25 +56,44 @@ public class TransferOrchestrator {
             throw new InvalidTransactionException("Amount must be greater than zero");
         }
 
+        // ensures same key cannot be reused with different payload
         idempotencyService.validate(key, requestHash);
 
+        // ---- Idempotency read (state-aware) ----
         Optional<IdempotencyRecord> existing = idempotencyService.get(key);
 
         if (existing.isPresent()) {
-            log.info("Returning cached transfer key={}", key);
-            return existing.get().getResponse();
+            IdempotencyRecord r = existing.get();
+
+            if ("SUCCESS".equals(r.getStatus())) {
+                log.info("Returning cached SUCCESS response key={}", key);
+                return r.getResponse();
+            }
+
+            if ("PROCESSING".equals(r.getStatus())) {
+                log.warn("Duplicate request in progress key={}", key);
+                throw new DuplicateRequestException("In progress");
+            }
+
         }
 
         boolean lockAcquired = false;
 
         try {
-
+            // distributed lock to prevent parallel execution for same key
             lockAcquired = idempotencyService.acquireLock(key);
 
             if (!lockAcquired) {
                 throw new DuplicateRequestException("Duplicate request in progress");
             }
-            // Lock ordering
+
+            // mark request as in-progress (important for concurrency safety)
+            IdempotencyRecord processingRecord =
+                    new IdempotencyRecord(key, requestHash, null, "PROCESSING");
+
+            idempotencyService.saveProcessing(key, processingRecord);
+
+            // ---- Consistent lock ordering to avoid DB deadlocks ----
             Account first = sourceId < targetId
                     ? accountService.getForUpdate(sourceId)
                     : accountService.getForUpdate(targetId);
@@ -84,6 +105,7 @@ public class TransferOrchestrator {
             Account source = sourceId.equals(first.getId()) ? first : second;
             Account target = targetId.equals(first.getId()) ? first : second;
 
+            // ---- Business logic ----
             accountService.debit(source, amount);
             accountService.credit(target, amount);
 
@@ -111,43 +133,32 @@ public class TransferOrchestrator {
 
             transferRepository.save(transfer);
 
+            // ---- Build response ----
             TransferResponse response = new TransferResponse();
             response.setId(debit.getId());
             response.setAmount(amount);
             response.setType(TransactionType.DEBIT);
             response.setStatus(TransactionStatus.SUCCESS);
 
-            IdempotencyRecord record =
+            IdempotencyRecord successRecord =
                     new IdempotencyRecord(key, requestHash, response, "SUCCESS");
 
-            idempotencyService.saveSuccess(key, record);
+            idempotencyService.saveSuccess(key, successRecord);
 
             log.info("Transfer completed id={} key={}", debit.getId(), key);
 
             return response;
 
-        } catch (InvalidTransactionException | DuplicateRequestException ex) {
-
+        }
+        catch (InvalidTransactionException | DuplicateRequestException | InsufficientBalanceException ex) {
             log.error("Transfer failed key={} error={}", key, ex.getMessage(), ex);
-
-            IdempotencyRecord record =
-                    new IdempotencyRecord(key, requestHash, null, "FAILURE");
-
-            idempotencyService.saveFailure(key, record);
-
             throw ex;
-
-        } catch (Exception ex) {
-
+        }
+        catch (Exception ex) {
             log.error("Transfer failed key={} error={}", key, ex.getMessage(), ex);
-
-            IdempotencyRecord record =
-                    new IdempotencyRecord(key, requestHash, null, "FAILURE");
-
-            idempotencyService.saveFailure(key, record);
-
             throw new TransferProcessingException("Transfer failed", ex);
-        } finally {
+        }
+        finally {
             if (lockAcquired) {
                 idempotencyService.releaseLock(key);
             }

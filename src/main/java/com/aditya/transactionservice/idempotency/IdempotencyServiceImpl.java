@@ -103,4 +103,13 @@ public class IdempotencyServiceImpl implements IdempotencyService {
 
         log.info("Idempotency failure stored key={} ttl={}min", key, RECORD_TTL);
     }
+
+    @Override
+    public void saveProcessing(String key, IdempotencyRecord record) {
+        record.setStatus("PROCESSING");
+
+        redisTemplate.opsForValue().set(key, record, RECORD_TTL, TimeUnit.MINUTES);
+
+        log.info("Idempotency processing stored key={} ttl={}min", key, RECORD_TTL);
+    }
 }

@@ -15,4 +15,6 @@ public interface IdempotencyService {
     void saveSuccess(String key, IdempotencyRecord record);
 
     void saveFailure(String key, IdempotencyRecord record);
+
+    void saveProcessing(String key, IdempotencyRecord record);
 }
