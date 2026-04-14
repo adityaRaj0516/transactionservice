@@ -11,8 +11,10 @@ import com.aditya.transactionservice.idempotency.IdempotencyService;
 import com.aditya.transactionservice.repository.AccountRepository;
 import com.aditya.transactionservice.repository.TransactionRepository;
 import com.aditya.transactionservice.repository.TransferRepository;
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.aditya.transactionservice.dto.TransferRequest;
@@ -30,6 +32,7 @@ public class TransferOrchestrator {
     private final AccountRepository accountRepository;
     private final TransactionRepository transactionRepository;
     private final TransferRepository transferRepository;
+    private final EntityManager entityManager;
 
     @Transactional(rollbackFor = Exception.class)
     public TransferResponse execute(TransferRequest request, String key) {
@@ -40,10 +43,10 @@ public class TransferOrchestrator {
 
         String requestHash = sourceId + ":" + targetId + ":" + amount;
 
-        log.info("Transfer request received: {} -> {} amount={} key={}",
+        log.info("Transfer initiated source={} target={} amount={} key={}",
                 sourceId, targetId, amount, key);
 
-        // ---- Basic validations ----
+        // ---------- Validation ----------
         if (key == null || key.isBlank()) {
             throw new InvalidTransactionException("Idempotency key required");
         }
@@ -56,44 +59,60 @@ public class TransferOrchestrator {
             throw new InvalidTransactionException("Amount must be greater than zero");
         }
 
-        // ensures same key cannot be reused with different payload
-        idempotencyService.validate(key, requestHash);
+        try {
+            idempotencyService.validate(key, requestHash);
+        } catch (DuplicateRequestException e) {
+            throw e;
+        } catch (Exception e) {
+            log.warn("Redis unavailable during validate key={}", key);
+        }
 
-        // ---- Idempotency read (state-aware) ----
-        Optional<IdempotencyRecord> existing = idempotencyService.get(key);
+        // ---------- Idempotency check ----------
+        Optional<IdempotencyRecord> existing = Optional.empty();
+        try {
+            existing = idempotencyService.get(key);
+        } catch (Exception e) {
+            log.warn("Redis unavailable during GET key={}", key);
+        }
 
         if (existing.isPresent()) {
-            IdempotencyRecord r = existing.get();
+            IdempotencyRecord record = existing.get();
 
-            if ("SUCCESS".equals(r.getStatus())) {
-                log.info("Returning cached SUCCESS response key={}", key);
-                return r.getResponse();
+            if ("SUCCESS".equals(record.getStatus())) {
+                log.info("Idempotent replay (SUCCESS) key={}", key);
+                return record.getResponse();
             }
 
-            if ("PROCESSING".equals(r.getStatus())) {
-                log.warn("Duplicate request in progress key={}", key);
+            if ("PROCESSING".equals(record.getStatus())) {
                 throw new DuplicateRequestException("In progress");
             }
-
         }
 
         boolean lockAcquired = false;
 
         try {
-            // distributed lock to prevent parallel execution for same key
-            lockAcquired = idempotencyService.acquireLock(key);
+            // ---------- Lock ----------
+            try {
+                lockAcquired = idempotencyService.acquireLock(key);
+            } catch (Exception e) {
+                log.warn("Redis unavailable during LOCK key={}", key);
+                lockAcquired = true;
+            }
 
             if (!lockAcquired) {
                 throw new DuplicateRequestException("Duplicate request in progress");
             }
 
-            // mark request as in-progress (important for concurrency safety)
-            IdempotencyRecord processingRecord =
-                    new IdempotencyRecord(key, requestHash, null, "PROCESSING");
+            try {
+                idempotencyService.saveProcessing(
+                        key,
+                        new IdempotencyRecord(key, requestHash, null, "PROCESSING")
+                );
+            } catch (Exception e) {
+                log.warn("Redis unavailable during PROCESSING save key={}", key);
+            }
 
-            idempotencyService.saveProcessing(key, processingRecord);
-
-            // ---- Consistent lock ordering to avoid DB deadlocks ----
+            // ---------- DB lock ordering ----------
             Account first = sourceId < targetId
                     ? accountService.getForUpdate(sourceId)
                     : accountService.getForUpdate(targetId);
@@ -105,7 +124,7 @@ public class TransferOrchestrator {
             Account source = sourceId.equals(first.getId()) ? first : second;
             Account target = targetId.equals(first.getId()) ? first : second;
 
-            // ---- Business logic ----
+            // ---------- Business logic ----------
             accountService.debit(source, amount);
             accountService.credit(target, amount);
 
@@ -131,36 +150,51 @@ public class TransferOrchestrator {
             transfer.setTransactionId(String.valueOf(debit.getId()));
             transfer.setIdempotencyKey(key);
 
-            transferRepository.save(transfer);
+            // ---------- DB insert ----------
+            try {
+                transferRepository.save(transfer);
+            } catch (DataIntegrityViolationException dbEx) {
 
-            // ---- Build response ----
+                log.warn("DB duplicate detected key={}", key);
+
+                entityManager.clear();
+
+                throw new DuplicateRequestException("Duplicate request detected");
+            }
+
+            // ---------- Success ----------
             TransferResponse response = new TransferResponse();
             response.setId(debit.getId());
             response.setAmount(amount);
             response.setType(TransactionType.DEBIT);
             response.setStatus(TransactionStatus.SUCCESS);
 
-            IdempotencyRecord successRecord =
-                    new IdempotencyRecord(key, requestHash, response, "SUCCESS");
-
-            idempotencyService.saveSuccess(key, successRecord);
+            try {
+                idempotencyService.saveSuccess(
+                        key,
+                        new IdempotencyRecord(key, requestHash, response, "SUCCESS")
+                );
+            } catch (Exception e) {
+                log.warn("Redis unavailable during SUCCESS save key={}", key);
+            }
 
             log.info("Transfer completed id={} key={}", debit.getId(), key);
 
             return response;
 
-        }
-        catch (InvalidTransactionException | DuplicateRequestException | InsufficientBalanceException ex) {
-            log.error("Transfer failed key={} error={}", key, ex.getMessage(), ex);
-            throw ex;
-        }
-        catch (Exception ex) {
-            log.error("Transfer failed key={} error={}", key, ex.getMessage(), ex);
-            throw new TransferProcessingException("Transfer failed", ex);
-        }
-        finally {
+        } catch (InvalidTransactionException | DuplicateRequestException | InsufficientBalanceException e) {
+            log.warn("Transfer rejected key={} reason={}", key, e.getMessage());
+            throw e;
+        } catch (Exception e) {
+            log.error("Unexpected failure key={} message={}", key, e.getMessage(), e);
+            throw new TransferProcessingException("Transfer failed", e);
+        } finally {
             if (lockAcquired) {
-                idempotencyService.releaseLock(key);
+                try {
+                    idempotencyService.releaseLock(key);
+                } catch (Exception e) {
+                    log.warn("Redis unavailable during lock release key={}", key);
+                }
             }
         }
     }
